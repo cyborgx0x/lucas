@@ -4,7 +4,11 @@ pragma solidity ^0.8.0;
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
-// Profit-sharing token contract with purchase and distribution mechanisms
+/**
+ * @title LucasToken
+ * @dev Profit-sharing token contract with purchase and distribution mechanisms
+ * Token holders can buy tokens, receive profit distributions, and claim their share
+ */
 contract LucasToken is ReentrancyGuard, Ownable {
     // Token Details
     string public name = "LucasToken"; // Token name
@@ -36,12 +40,19 @@ contract LucasToken is ReentrancyGuard, Ownable {
     );
     event ProfitDistributed(uint256 totalProfit, uint256 timestamp);
 
-    // Constructor: Allocate initial supply to owner
+    /**
+     * @dev Constructor that allocates the initial supply to the owner
+     * @param initialOwner Address that will receive the total token supply
+     */
     constructor(address initialOwner) Ownable(initialOwner) {
         balanceOf[initialOwner] = totalSupply;
     }
 
-    // Purchase tokens with ETH
+    /**
+     * @dev Allows users to purchase tokens with ETH
+     * @param amount Number of tokens to purchase (in token units with decimals)
+     * @notice Excess ETH will be refunded to the sender
+     */
     function buyTokens(uint256 amount) external payable {
         require(balanceOf[owner()] >= amount, "Not enough tokens available");
         uint256 cost = (amount * tokenPrice) / 10 ** 18;
@@ -57,13 +68,21 @@ contract LucasToken is ReentrancyGuard, Ownable {
         }
     }
 
-    // Announce upcoming profit distribution (initiates timelock)
+    /**
+     * @dev Announces upcoming profit distribution, starting the timelock period
+     * @notice Only owner can call this function
+     */
     function announceDistribution() external onlyOwner {
         announcedDistributionTime = block.timestamp + distributionDelay;
         distributionAnnounced = true;
     }
 
-    // Distribute profits to token holders
+    /**
+     * @dev Distributes profits to token holders by calculating profit per token
+     * @notice Only owner can call this function
+     * @notice Distribution must be announced first and timelock delay must pass
+     * @notice Sent ETH will be distributed proportionally to token holders
+     */
     function distributeProfit() external payable onlyOwner {
         require(distributionAnnounced, "Must announce distribution first");
         require(
@@ -79,7 +98,12 @@ contract LucasToken is ReentrancyGuard, Ownable {
         distributionAnnounced = false;
     }
 
-    // Claim accumulated profits for a specific round
+    /**
+     * @dev Allows users to claim profits for a specific distribution round
+     * @param round The distribution round to claim profits from
+     * @notice User must hold tokens for minimum holding period before claiming
+     * @notice Each round can only be claimed once per address
+     */
     function claimProfit(uint256 round) external nonReentrant {
         require(round < currentRound, "Invalid or future round");
         require(
@@ -93,13 +117,22 @@ contract LucasToken is ReentrancyGuard, Ownable {
 
         uint256 userTokens = balanceOf[msg.sender];
         uint256 profit = (userTokens * profitPerToken[round]) / 10 ** 18;
+        
+        // Fix reentrancy vulnerability by updating state before external call
         hasClaimed[msg.sender][round] = true;
-        payable(msg.sender).transfer(profit);
+        
+        // Perform external call after state changes
+        (bool success, ) = payable(msg.sender).call{value: profit}("");
+        require(success, "ETH transfer failed");
     }
 
-    // ERC-20 Functions
-
-    // Transfer tokens between addresses
+    /**
+     * @dev Transfers tokens to another address
+     * @param to The recipient address
+     * @param value The amount of tokens to transfer
+     * @return success True if the transfer was successful
+     * @notice Updates last transfer time for both sender and recipient
+     */
     function transfer(address to, uint256 value) external returns (bool) {
         require(to != address(0), "Cannot transfer to zero address");
         require(balanceOf[msg.sender] >= value, "Insufficient balance");
@@ -112,7 +145,12 @@ contract LucasToken is ReentrancyGuard, Ownable {
         return true;
     }
 
-    // Approve a spender to transfer tokens on behalf of the owner
+    /**
+     * @dev Approves a spender to transfer tokens on behalf of the caller
+     * @param spender The address authorized to spend tokens
+     * @param value The spending allowance granted
+     * @return success True if the approval was successful
+     */
     function approve(address spender, uint256 value) external returns (bool) {
         require(spender != address(0), "Cannot approve zero address");
         allowance[msg.sender][spender] = value;
@@ -120,7 +158,14 @@ contract LucasToken is ReentrancyGuard, Ownable {
         return true;
     }
 
-    // Transfer tokens from one address to another using allowance
+    /**
+     * @dev Transfers tokens from one address to another using allowance
+     * @param from The address to transfer tokens from
+     * @param to The address to transfer tokens to
+     * @param value The amount of tokens to transfer
+     * @return success True if the transfer was successful
+     * @notice Updates last transfer time for both sender and recipient
+     */
     function transferFrom(
         address from,
         address to,
@@ -140,7 +185,10 @@ contract LucasToken is ReentrancyGuard, Ownable {
         return true;
     }
 
-    // Withdraw excess ETH from contract (emergency function)
+    /**
+     * @dev Allows owner to withdraw any excess ETH from the contract
+     * @notice Only owner can call this function
+     */
     function withdrawExcess() external onlyOwner {
         payable(owner()).transfer(address(this).balance);
     }
